@@ -1,0 +1,73 @@
+seed: 42
+deterministic: true
+
+model:
+  name_or_path: meta-llama/Llama-3.2-3B-Instruct
+  # A Hugging Face token with access to the gated Llama weights may be required.
+  tokenizer_name_or_path: meta-llama/Llama-3.2-3B-Instruct
+  device: cuda
+  dtype: bfloat16
+  quantization: none  # "none" is the safest choice for double autograd; optional: "4bit"
+  attn_implementation: eager  # required for portable second derivatives/HVPs
+  gradient_checkpointing: true
+  trust_remote_code: false
+
+lora:
+  rank: 8
+  alpha: 16
+  dropout: 0.0  # deterministic curvature requires dropout-free evaluation
+  target_modules: [q_proj, v_proj]
+  bias: none
+
+data:
+  max_length: 256
+  forget:
+    path: locuslab/TOFU
+    name: forget10
+    split: train
+    question_column: question
+    answer_column: answer
+    max_examples: null
+    num_workers: 0
+  retain:
+    path: locuslab/TOFU
+    name: retain90
+    split: train
+    question_column: question
+    answer_column: answer
+    max_examples: null
+    num_workers: 0
+
+# g(theta) is NPO; the frozen base policy is evaluated by disabling LoRA.
+forget_objective:
+  type: npo  # alternatives: gradient_ascent
+  beta: 0.1
+
+training:
+  output_dir: checkpoints
+  num_steps: 1000
+  batch_size: 1
+  learning_rate: 5.0e-5
+  gamma: 1.0
+  projection_epsilon: 1.0e-12
+  max_update_norm: null
+  save_initial: true
+  save_every: 100
+  log_every: 10
+
+analysis:
+  checkpoints_dir: checkpoints
+  results_dir: results
+  batch_size: 1
+  # Every checkpoint uses this same deterministic prefix. Raise for a lower-variance
+  # objective estimate, at a proportional cost for every Lanczos HVP.
+  num_loss_batches: 4
+  num_lanczos_steps: 12
+  lanczos_tolerance: 1.0e-7
+  reorthogonalize: true
+  fosp_grad_threshold: 1.0e-3
+  negative_curvature_delta: 0.05
+  save_all_eigenvectors: false
+
+negative_escape:
+  alphas: [1.0e-4, 5.0e-4, 1.0e-3, 5.0e-3]
